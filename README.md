@@ -23,6 +23,10 @@ XoDos rebirth is the second version of XoDos original but different app and feat
 # About
 it's a fully fledged X server with termux and winlator touch controls together in one App. It is built with Android NDK.
 
+## Our website 🌐
+[XoDos website](https://karysdeveloper.github.io/xodos.web)
+Developed by @Karysdeveloper ©2026
+
 ## Submodules
 This repo uses submodules. Use 
 
@@ -178,7 +182,7 @@ xodios X - [@XAleiwi](https://x.com/XAleiwi)
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Contributors 
-Team: @xodiosx🇾🇪 & @DesarrolladorPrimary 🇨🇴 & @Mondo67244🇲🇫 & (telegram:@Aurora0y🇧🇷) & (telegram:@Chest1902🇧🇩) & @jiaxinchen-max 🇨🇳 & @Snap888🇷🇺
+Team: @xodiosx🇾🇪 & @Karysdeveloper 🇨🇴 & @Mondo67244🇲🇫 & (telegram:@Aurora0y🇧🇷) & (telegram:@Chest1902🇧🇩) & @jiaxinchen-max 🇨🇳 & @Snap888🇷🇺
 Logo designer:(telegram:@xl_v6/ashen🇮🇶)
 
 
