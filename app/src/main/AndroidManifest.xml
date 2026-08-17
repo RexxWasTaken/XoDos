@@ -10,9 +10,13 @@
     <uses-feature
         android:name="android.hardware.touchscreen"
         android:required="false" />
+
     <uses-feature
         android:name="android.software.leanback"
         android:required="false" />
+
+    <!-- REXX Windows microphone support -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
 
     <permission
         android:name="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND"
@@ -45,7 +49,6 @@
         android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
-
     <application
         android:name=".app.TermuxApplication"
         android:allowBackup="false"
@@ -61,20 +64,16 @@
         tools:targetApi="m"
         tools:replace="android:allowBackup,android:label,android:theme,android:supportsRtl">
 
-        <!-- PS1 Emulator Activities (example if included as module) -->
+        <!-- Termux-X11 -->
+        <activity
+            android:name="com.termux.x11.MainActivity"
+            android:exported="false"
+            android:supportsPictureInPicture="true"
+            android:resizeableActivity="true"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
+            android:launchMode="singleTask"
+            android:theme="@style/Theme.ForceBlack" />
 
-
-
-        <!--termux-x11-->
-        <!-- Termux X11 Main Window Activity (PIP mode enabled) -->
-<activity
-    android:name="com.termux.x11.MainActivity"
-    android:exported="false"
-    android:supportsPictureInPicture="true"
-    android:resizeableActivity="true"
-    android:configChanges="keyboard|keyboardHidden|orientation|screenLayout|screenSize|smallestScreenSize|uiMode"
-    android:launchMode="singleTask"
-    android:theme="@style/Theme.ForceBlack" />
         <activity
             android:name="com.termux.x11.controller.ControlsEditorActivity"
             android:exported="false"
@@ -86,6 +85,7 @@
             android:exported="false"
             android:screenOrientation="sensor"
             android:theme="@style/Theme.ForceBlack" />
+
         <activity
             android:name="com.termux.x11.controller.InputControllerActivity"
             android:exported="false"
@@ -95,7 +95,7 @@
         <meta-data
             android:name="android.allow_multiple_resumed_activities"
             android:value="true" />
-        <!--termux-x11-->
+
         <activity
             android:name=".app.TermuxActivity"
             android:configChanges="orientation|screenSize|smallestScreenSize|density|screenLayout|keyboard|keyboardHidden|navigation"
@@ -105,10 +105,12 @@
             android:resizeableActivity="true"
             android:theme="@style/Theme.TermuxActivity.DayNight.NoActionBar"
             tools:targetApi="n">
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
@@ -124,10 +126,8 @@
             android:exported="true"
             android:targetActivity=".app.TermuxActivity">
 
-            <!-- Launch activity automatically on boot on Android Things devices -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-
                 <category android:name="android.intent.category.IOT_LAUNCHER" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
@@ -159,17 +159,15 @@
             android:noHistory="true"
             android:resizeableActivity="true"
             android:taskAffinity="${TERMUX_PACKAGE_NAME}.filereceiver"
-            tools:targetApi="n"></activity>
+            tools:targetApi="n" />
 
         <activity-alias
             android:name=".app.api.file.FileShareReceiverActivity"
             android:exported="true"
             android:targetActivity=".app.api.file.FileReceiverActivity">
 
-            <!-- Accept multiple file types when sending. -->
             <intent-filter>
                 <action android:name="android.intent.action.SEND" />
-
                 <category android:name="android.intent.category.DEFAULT" />
 
                 <data android:mimeType="application/*" />
@@ -187,10 +185,8 @@
             android:exported="true"
             android:targetActivity=".app.api.file.FileReceiverActivity">
 
-            <!-- Accept multiple file types to let Termux be usable as generic file viewer. -->
             <intent-filter tools:ignore="AppLinkUrlError">
                 <action android:name="android.intent.action.VIEW" />
-
                 <category android:name="android.intent.category.DEFAULT" />
 
                 <data android:mimeType="application/*" />
@@ -201,25 +197,15 @@
             </intent-filter>
         </activity-alias>
 
-        <!--                <provider-->
-        <!--                    android:name=".filepicker.TermuxDocumentsProvider"-->
-        <!--                    android:authorities="${TERMUX_PACKAGE_NAME}.documents"-->
-        <!--                    android:exported="true"-->
-        <!--                    android:grantUriPermissions="true"-->
-        <!--                    android:permission="android.permission.MANAGE_DOCUMENTS">-->
-        <!--                    <intent-filter>-->
-        <!--                        <action android:name="android.content.action.DOCUMENTS_PROVIDER" />-->
-        <!--                    </intent-filter>-->
-        <!--                </provider>-->
         <provider
             android:name="bin.mt.file.content.MTDataFilesProvider"
             android:permission="android.permission.MANAGE_DOCUMENTS"
             android:exported="true"
             android:authorities="com.termux.MTDataFilesProvider"
             android:grantUriPermissions="true">
+
             <intent-filter>
-                <action
-                    android:name="android.content.action.DOCUMENTS_PROVIDER" />
+                <action android:name="android.content.action.DOCUMENTS_PROVIDER" />
             </intent-filter>
         </provider>
 
@@ -230,7 +216,6 @@
             android:grantUriPermissions="true"
             android:permission="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND" />
 
-
         <receiver
             android:name=".app.TermuxOpenReceiver"
             android:exported="false" />
@@ -238,6 +223,7 @@
         <receiver
             android:name=".app.event.SystemEventReceiver"
             android:exported="false">
+
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
             </intent-filter>
@@ -247,7 +233,6 @@
             android:name=".shared.activities.ReportActivity$ReportActivityBroadcastReceiver"
             android:exported="false" />
 
-
         <service
             android:name=".app.TermuxService"
             android:exported="false" />
@@ -256,38 +241,40 @@
             android:name=".app.RunCommandService"
             android:exported="true"
             android:permission="${TERMUX_PACKAGE_NAME}.permission.RUN_COMMAND">
+
             <intent-filter>
                 <action android:name="${TERMUX_PACKAGE_NAME}.RUN_COMMAND" />
             </intent-filter>
         </service>
 
-        <!-- This (or rather, value 2.1 or higher) is needed to make the Samsung Galaxy S8 mark the
-        app with "This app is optimized to run in full screen." -->
         <meta-data
             android:name="android.max_aspect"
             android:value="10.0" />
 
+        <meta-data
+            android:name="com.google.android.gms.games.GAME"
+            android:value="true" />
 
-        <!-- https://developer.samsung.com/samsung-dex/modify-optimizing.html -->
-<!-- Game optimization metadata (optional) -->
-        <meta-data android:name="com.google.android.gms.games.GAME" android:value="true" />
-        <meta-data android:name="com.samsung.android.game.game_home" android:value="true" />
-        <meta-data android:name="com.samsung.android.game.game_booster" android:value="true" />
-        <meta-data android:name="com.samsung.android.game.gamelist" android:value="true" />
+        <meta-data
+            android:name="com.samsung.android.game.game_home"
+            android:value="true" />
 
-        <!-- Version < 3.0. DeX Mode and Screen Mirroring support -->
-       
+        <meta-data
+            android:name="com.samsung.android.game.game_booster"
+            android:value="true" />
 
-        <!-- Version >= 3.0. DeX Dual Mode support -->
-
+        <meta-data
+            android:name="com.samsung.android.game.gamelist"
+            android:value="true" />
 
         <meta-data
             android:name="com.sec.android.support.multiwindow"
             android:value="true" />
-            <meta-data
+
+        <meta-data
             android:name="com.samsung.android.multidisplay.keep_process_alive"
             android:value="true"
-            tools:replace="android:value"/>
+            tools:replace="android:value" />
 
     </application>
 
