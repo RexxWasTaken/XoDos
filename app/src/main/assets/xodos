@@ -1,212 +1,574 @@
 #!/bin/bash
+
+# ============================================================
+# XoDos - REXX Enhanced Windows Runtime Boot
+# ============================================================
+
+set +e
+
+PREFIX="/data/data/com.termux/files/usr"
+HOME_DIR="/data/data/com.termux/files/home"
+VULKAN_DIR="$PREFIX/share/vulkan/icd.d"
+LIB_DIR="$PREFIX/lib"
+
+export PATH="$PREFIX/bin:/system/bin:$PATH"
+export LD_LIBRARY_PATH="$PREFIX/lib:/system/lib64:/system/lib"
+export PREFIX="$PREFIX"
+export HOME="$HOME_DIR"
+export TMPDIR="$PREFIX/tmp"
+
+# ============================================================
 # Kill previous sessions
-pkill -f wine
+# ============================================================
+
+echo "========================================"
+echo "        XoDos REXX Boot"
+echo "========================================"
+
+echo "[1/10] Cleaning previous sessions..."
+
+pkill -f wine >/dev/null 2>&1
+pkill -f wineserver >/dev/null 2>&1
+pkill -f box64 >/dev/null 2>&1
+pkill -f box86 >/dev/null 2>&1
+pkill virgl_test_server >/dev/null 2>&1
+pkill xfwm4 >/dev/null 2>&1
+pkill xfce4-session >/dev/null 2>&1
+
+kill -9 $(pgrep -f "termux.x11") >/dev/null 2>&1
+
+sleep 1
+
+# ============================================================
+# Desktop theme
+# ============================================================
 
 export GTK_THEME="Dracula:dark"
 export XCURSOR_THEME="WineTrix"
-kill -9 $(pgrep -f "termux.x11") >/dev/null 2>&1
-pkill virgl_*
-pkill xfwm4
-echo "Booting XoDos..."
-echo "GPU Detection:"
 
-#check drivers
-cpu_info=$(grep -i "Hardware" /proc/cpuinfo)
-cpu_info2=$(getprop ro.hardware.chipname)
-gpu_info=$(getprop ro.hardware.gpu)
-gpu_info2=$(getprop ro.hardware.vulkan)
-gpu_info3=$(getprop ro.hardware.egl)
-# Concatenate  information into one variable
-chkgpu="$gpu_info $gpu_info2 $gpu_info3"
-chkcpu="$cpu_info $cpu_info2"
-ugpu=$(echo "$chkgpu" | tr ' ' '\n' | sort -u | tr '\n' ' ')
-ucpu=$(echo "$chkcpu" | grep -o "\bQualcomm\b" )
+# ============================================================
+# Hardware detection
+# ============================================================
 
-# Output information
-echo "your GPU is $ugpu "
-echo "your CPU is $ucpu $cpu_info2  "
+echo "[2/10] Detecting hardware..."
 
-# Check if the CPU and GPU are supported
-if echo "$cpu_info" | grep -qi "Qualcomm" || echo "$cpu_info2" | grep -qi "sdm";  then
-    echo "Supported CPU: Snapdragon detected."
-    # Continue with your code here
-if echo "$ugpu" | grep -qi "adreno" ; then
-    echo "Supported GPU: Adreno GPU detected"
-    # Continue with your code her
-echo "you can use turnip driver for better performance"
-echo "Setting up turnip driver"
-	driv=/data/data/com.termux/files/usr/lib/libvulkan_wrapper.so
-if [ -f $driv ]; then
-unset VK_ICD_FILENAMES
-export VK_ICD_FILENAMES=/data/data/com.termux/files/usr/share/vulkan/icd.d/freedreno_icd.aarch64.json
-#mv /data/data/com.termux/files/usr/lib/libvulkan_wrapper.so /data/data/com.termux/files/usr/lib/libvulkan_wrapper.so.0
+CPU_MODEL="$(getprop ro.product.cpu.model 2>/dev/null)"
+CPU_HARDWARE="$(grep -i "Hardware" /proc/cpuinfo 2>/dev/null | head -n 1)"
+CHIPNAME="$(getprop ro.hardware.chipname 2>/dev/null)"
+HARDWARE="$(getprop ro.hardware 2>/dev/null)"
+
+GPU_NAME="$(getprop ro.hardware.gpu 2>/dev/null)"
+GPU_VULKAN="$(getprop ro.hardware.vulkan 2>/dev/null)"
+GPU_EGL="$(getprop ro.hardware.egl 2>/dev/null)"
+
+CPU_CORES="$(nproc 2>/dev/null)"
+[ -z "$CPU_CORES" ] && CPU_CORES="4"
+
+RAM_KB="$(awk '/MemTotal/ {print $2; exit}' /proc/meminfo 2>/dev/null)"
+RAM_MB="$((RAM_KB / 1024))"
+
+if [ "$RAM_MB" -le 0 ]; then
+    RAM_MB="4096"
 fi
-else 
-echo "CPU supported for turnip driver but GPU is unknown if it's not supported with turnip driver Try universal or Vulkan wrapper"
-echo "Setting up turnip driver"
-	driv=/data/data/com.termux/files/usr/lib/libvulkan_wrapper.so
-if [ -f $driv ]; then
-unset VK_ICD_FILENAMES
-export VK_ICD_FILENAMES=/data/data/com.termux/files/usr/share/vulkan/icd.d/freedreno_icd.aarch64.json
-#mv /data/data/com.termux/files/usr/lib/libvulkan_wrapper.so /data/data/com.termux/files/usr/lib/libvulkan_wrapper.so.0
-fi
-		
-fi
+
+# Combine GPU information
+CHKGPU="$GPU_NAME $GPU_VULKAN $GPU_EGL"
+CHKGPU_LOWER="$(echo "$CHKGPU" | tr '[:upper:]' '[:lower:]')"
+
+CPU_ALL="$CPU_MODEL $CPU_HARDWARE $CHIPNAME $HARDWARE"
+CPU_ALL_LOWER="$(echo "$CPU_ALL" | tr '[:upper:]' '[:lower:]')"
+
+echo ""
+echo "--------------- HARDWARE ----------------"
+echo "CPU       : $CPU_MODEL"
+echo "Chip      : $CHIPNAME"
+echo "Hardware  : $HARDWARE"
+echo "GPU       : $GPU_NAME"
+echo "Vulkan    : $GPU_VULKAN"
+echo "EGL       : $GPU_EGL"
+echo "RAM       : ${RAM_MB}MB"
+echo "CPU Cores : $CPU_CORES"
+echo "------------------------------------------"
+echo ""
+
+# ============================================================
+# Detect GPU type
+# ============================================================
+
+GPU_TYPE="unknown"
+DRIVER_TYPE="wrapper"
+
+if echo "$CHKGPU_LOWER" | grep -Eq "adreno|freedreno"; then
+
+    GPU_TYPE="adreno"
+    DRIVER_TYPE="turnip"
+
+elif echo "$CHKGPU_LOWER" | grep -Eq "mali"; then
+
+    GPU_TYPE="mali"
+    DRIVER_TYPE="wrapper"
+
+elif echo "$CHKGPU_LOWER" | grep -Eq "powervr"; then
+
+    GPU_TYPE="powervr"
+    DRIVER_TYPE="wrapper"
+
+elif echo "$CHKGPU_LOWER" | grep -Eq "xclipse"; then
+
+    GPU_TYPE="xclipse"
+    DRIVER_TYPE="wrapper"
+
 else
-    echo "CPU and GPU are not Snapdragon or Adreno means turnip not supported you can't use turnip driver but you may use universal or Vulkan wrapper drivers"
-    # Exit or handle unsupported CPUs here
-sleep 1
-			echo "setting up wrapper,,,"
-			driv=/data/data/com.termux/files/usr/lib/libvulkan_wrapper.so.0
-if [ -f $driv ]; then
-unset VK_ICD_FILENAMES
-export VK_ICD_FILENAMES=/data/data/com.termux/files/usr/share/vulkan/icd.d/wrapper_icd.aarch64.json
-mv /data/data/com.termux/files/usr/lib/libvulkan_wrapper.so.0 /data/data/com.termux/files/usr/lib/libvulkan_wrapper.so
+
+    GPU_TYPE="unknown"
+    DRIVER_TYPE="wrapper"
+
 fi
-						
+
+echo "Detected GPU type : $GPU_TYPE"
+echo "Preferred driver  : $DRIVER_TYPE"
+
+# ============================================================
+# Automatic performance preset
+# ============================================================
+
+echo ""
+echo "[3/10] Creating automatic performance profile..."
+
+PERF_PRESET="balanced"
+TARGET_RESOLUTION="1280x720"
+
+if [ "$RAM_MB" -lt 3072 ]; then
+
+    PERF_PRESET="low"
+    TARGET_RESOLUTION="960x540"
+
+elif [ "$RAM_MB" -lt 5120 ]; then
+
+    PERF_PRESET="balanced"
+    TARGET_RESOLUTION="1280x720"
+
+elif [ "$RAM_MB" -lt 8192 ]; then
+
+    PERF_PRESET="high"
+    TARGET_RESOLUTION="1280x720"
+
+else
+
+    PERF_PRESET="ultra"
+    TARGET_RESOLUTION="1600x900"
+
 fi
-	
-	sleep 0.5
-#export VK_ICD_FILENAMES=/data/data/com.termux/files/usr/share/vulkan/icd.d/wrapper_icd.aarch64.json
 
-# Setup audio
-pulseaudio --start --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1" --exit-idle-time=-1 >/dev/null 2>&1
+# Snapdragon / Adreno optimisation
+if [ "$GPU_TYPE" = "adreno" ]; then
 
-# Start X11
-export XDG_RUNTIME_DIR=${TMPDIR}
-termux-x11 -ac :0 >/dev/null 2>&1 &
-sleep 2
-am start --user 0 -n com.termux/com.termux.x11.h.MainActivity >/dev/null 2>&1
-
-
-export VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_validation
-export MESA_VK_WSI_PRESENT_MODE=mailbox
-xfwm4 --replace &
-export GALLIUM_DRIVER=sw
-
-# Tell Vulkan where your layers live
-export VK_LAYER_PATH=$PREFIX/share/vulkan/explicit_layer.d
-
-# Enable any layer you want
-#
-export VK_INSTANCE_LAYERS=VK_LAYER_KHRONOS_synchronization2:VK_LAYER_KHRONOS_shader_object:VK_LAYER_KHRONOS_timeline_semaphore
-
-# Optional settings
-#
-#export VK_SYNCHRONIZATION2_FORCE_ENABLE=true
-#export VK_SHADER_OBJECT_FORCE_ENABLE=true
-#export VK_SHADER_OBJECT_DISABLE_PIPELINE_PRE_CACHING=true
-#export VK_INSTANCE_LAYERS=VK_LAYER_window_system_integration
-#######
-
-
-# Detect CPU and GPU
-cpu_info=$(grep -i "Hardware" /proc/cpuinfo)
-cpu_info2=$(getprop ro.hardware.chipname)
-gpu_info=$(getprop ro.hardware.gpu)
-gpu_info2=$(getprop ro.hardware.vulkan)
-gpu_info3=$(getprop ro.hardware.egl)
-
-# Format output
-chkgpu="$gpu_info $gpu_info2 $gpu_info3"
-chkcpu="$cpu_info $cpu_info2"
-ugpu=$(echo "$chkgpu" | tr ' ' '\n' | sort -u | tr '\n' ' ')
-ucpu=$(echo "$chkcpu" | grep -o "\bQualcomm\b")
-
-# Show detected info
-#zenity --info --title="Hardware Info" --width=500 --text="✅ <b>Detected GPU:</b> $ugpu\n✅ <b>Detected CPU:</b> $ucpu $cpu_info2"
-
-# Show 2 big buttons: Turnip Driver and Vulkan Wrapper
-zenity --question \
-  --title="Choose Vulkan Driver" \
-  --width=400 --height=150 \
-  --ok-label="Turnip Driver" \
-  --extra-button="Vulkan Wrapper" \
-  --text="Turnip For Adreno and wrapper for All 👇
-  ✅ <b>Detected GPU:</b> $ugpu\n✅<b>Detected CPU:</b> $ucpu $cpu_info2"
-
-# Capture button press
-result=$?
-
-# Vulkan paths
-vulkan_dir="/data/data/com.termux/files/usr/share/vulkan/icd.d"
-lib_dir="/data/data/com.termux/files/usr/lib"
-wrapper_lib="$lib_dir/libvulkan_wrapper.so"
-backup_lib="$lib_dir/libvulkan_wrapper.so.0"
-
-# Handle user selection
-if [ $result -eq 0 ]; then
-    # OK pressed: Turnip Driver
-    echo "Turnip selected"
-    if [ -f "$wrapper_lib" ]; then
-        unset VK_ICD_FILENAMES
-        export VK_ICD_FILENAMES="$vulkan_dir/freedreno_icd.aarch64.json"
-        #zenity --info --title="Driver Applied" --text="✅ Turnip driver configured.\n\nVK_ICD_FILENAMES set."
+    if [ "$RAM_MB" -ge 6144 ]; then
+        PERF_PRESET="high"
+        TARGET_RESOLUTION="1280x720"
     fi
-else
-    # Extra button: Vulkan Wrapper
-    echo "Wrapper selected"
-    
-        unset VK_ICD_FILENAMES
-        export VK_ICD_FILENAMES="$vulkan_dir/wrapper_icd.aarch64.json"
-        mv "$backup_lib" "$wrapper_lib"
-       # zenity --info --title="Driver Applied" --text="✅ Vulkan wrapper driver set.\n\nVK_ICD_FILENAMES updated."
-    
+
 fi
 
-# Big button selection
-choice=$(env DISPLAY=:0 zenity --question \
---title="XoDos Rendering Mode-وضع العرض" \
---text="Select acceleration method:حدد طريقة التسارع:" \
---ok-label="HARDWARE-الأجهزة (Zink+VirGL)(fast-سريع)" \
---cancel-label="VIRGL-فرجل (Linux-apps-برامج-لينكس)" \
---extra-button="CPU-المعالج (stable-مستقر)" \
---width=500 --height=300)
+# Very low core count safeguard
+if [ "$CPU_CORES" -le 4 ]; then
+
+    if [ "$PERF_PRESET" = "ultra" ]; then
+        PERF_PRESET="high"
+    fi
+
+fi
+
+echo "Preset     : $PERF_PRESET"
+echo "Resolution : $TARGET_RESOLUTION"
+
+# ============================================================
+# Export REXX runtime variables
+# ============================================================
+
+export REXX_RAM_MB="$RAM_MB"
+export REXX_CORES="$CPU_CORES"
+export REXX_GPU="$GPU_TYPE"
+export REXX_DRIVER="$DRIVER_TYPE"
+export REXX_PRESET="$PERF_PRESET"
+export REXX_RESOLUTION="$TARGET_RESOLUTION"
+export REXX_CPU_MODEL="$CPU_MODEL"
+export REXX_CHIP="$CHIPNAME"
+
+# ============================================================
+# Driver setup
+# ============================================================
+
+echo ""
+echo "[4/10] Configuring Vulkan driver..."
+
+WRAPPER_LIB="$LIB_DIR/libvulkan_wrapper.so"
+WRAPPER_BACKUP="$LIB_DIR/libvulkan_wrapper.so.0"
+
+TURNIP_ICD="$VULKAN_DIR/freedreno_icd.aarch64.json"
+WRAPPER_ICD="$VULKAN_DIR/wrapper_icd.aarch64.json"
+
+unset VK_ICD_FILENAMES
+
+if [ "$DRIVER_TYPE" = "turnip" ]; then
+
+    echo "Turnip / Freedreno selected."
+
+    if [ -f "$TURNIP_ICD" ]; then
+
+        export VK_ICD_FILENAMES="$TURNIP_ICD"
+        echo "Turnip ICD configured."
+
+    else
+
+        echo "WARNING: Turnip ICD not found."
+        echo "Falling back to Vulkan wrapper."
+
+        DRIVER_TYPE="wrapper"
+        export REXX_DRIVER="wrapper"
+
+    fi
+
+fi
+
+if [ "$DRIVER_TYPE" = "wrapper" ]; then
+
+    echo "Vulkan wrapper selected."
+
+    if [ -f "$WRAPPER_BACKUP" ] && [ ! -f "$WRAPPER_LIB" ]; then
+        mv "$WRAPPER_BACKUP" "$WRAPPER_LIB" >/dev/null 2>&1
+    fi
+
+    if [ -f "$WRAPPER_ICD" ]; then
+        export VK_ICD_FILENAMES="$WRAPPER_ICD"
+        echo "Wrapper ICD configured."
+    else
+        echo "WARNING: Wrapper ICD not found."
+    fi
+
+fi
+
+# ============================================================
+# Audio
+# ============================================================
+
+echo ""
+echo "[5/10] Starting audio..."
+
+pulseaudio \
+    --start \
+    --load="module-native-protocol-tcp auth-ip-acl=127.0.0.1 auth-anonymous=1" \
+    --exit-idle-time=-1 \
+    >/dev/null 2>&1
+
+export PULSE_SERVER="127.0.0.1"
+
+# ============================================================
+# X11
+# ============================================================
+
+echo ""
+echo "[6/10] Starting Termux:X11..."
+
+export XDG_RUNTIME_DIR="${TMPDIR}"
+
+mkdir -p "$XDG_RUNTIME_DIR" >/dev/null 2>&1
+
+termux-x11 -ac :0 >/dev/null 2>&1 &
+
+sleep 2
+
+am start \
+    --user 0 \
+    -n com.termux/com.termux.x11.h.MainActivity \
+    >/dev/null 2>&1
+
+sleep 2
+
+export DISPLAY=:0
+
+# ============================================================
+# Vulkan / Mesa configuration
+# ============================================================
+
+echo ""
+echo "[7/10] Configuring Mesa..."
+
+# IMPORTANT:
+# Validation/debug layers are disabled for normal gaming.
+unset VK_INSTANCE_LAYERS
+unset VK_LAYER_PATH
+
+export MESA_VK_WSI_PRESENT_MODE="mailbox"
+
+export MESA_SHADER_CACHE_DISABLE="false"
+export MESA_SHADER_CACHE_MAX_SIZE="512M"
+
+# Enable multithreading
+export mesa_glthread=true
+
+# ============================================================
+# Zink / rendering defaults
+# ============================================================
+
+export ZINK_DESCRIPTORS="lazy"
+
+# Do NOT force GALLIUM_DRIVER globally.
+unset GALLIUM_DRIVER
+
+# ============================================================
+# Rendering mode selection
+# ============================================================
+
+echo ""
+echo "[8/10] Selecting rendering mode..."
 
 unset GTK_THEME
-case $? in
-    0)  # Hardware acceleration
+
+choice=$(env DISPLAY=:0 zenity --question \
+    --title="XoDos Rendering Mode" \
+    --text="Select acceleration method:
+
+Detected GPU: $GPU_TYPE
+Driver: $DRIVER_TYPE
+RAM: ${RAM_MB} MB
+CPU Cores: $CPU_CORES
+Preset: $PERF_PRESET
+Resolution: $TARGET_RESOLUTION
+
+Hardware = Zink + VirGL
+VirGL = Linux compatibility mode
+CPU = Software rendering" \
+    --ok-label="HARDWARE (FAST)" \
+    --cancel-label="VIRGL" \
+    --extra-button="CPU (STABLE)" \
+    --width=520 \
+    --height=360)
+
+RESULT=$?
+
+# ============================================================
+# Rendering mode
+# ============================================================
+
+case "$RESULT" in
+
+    0)
+
+        echo ""
+        echo "Starting HARDWARE rendering..."
+
         unset GALLIUM_DRIVER
-        pkill xfwm4
-        echo "Starting with Zink+VirGL..."
-        echo $case
-        MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink ZINK_DESCRIPTORS=lazy virgl_test_server --use-egl-surfaceless --use-gles & >/dev/null 2>&1
-    
-    env DISPLAY=:0 MESA_NO_ERROR=1 MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink MESA_GL_VERSION_OVERRIDE=4.6COMPAT MESA_GLES_VERSION_OVERRIDE=3.2 dbus-launch --exit-with-session xfce4-session & >/dev/null 2>&1
+
+        pkill xfwm4 >/dev/null 2>&1
+
+        export MESA_LOADER_DRIVER_OVERRIDE="zink"
+        export GALLIUM_DRIVER="zink"
+        export ZINK_DESCRIPTORS="lazy"
+
+        virgl_test_server \
+            --use-egl-surfaceless \
+            --use-gles \
+            >/dev/null 2>&1 &
+
+        sleep 2
+
+        env DISPLAY=:0 \
+            MESA_NO_ERROR=1 \
+            MESA_LOADER_DRIVER_OVERRIDE=zink \
+            GALLIUM_DRIVER=zink \
+            MESA_GL_VERSION_OVERRIDE=4.6COMPAT \
+            MESA_GLES_VERSION_OVERRIDE=3.2 \
+            dbus-launch --exit-with-session xfce4-session \
+            >/dev/null 2>&1 &
+
+        RENDER_MODE="hardware"
+
         ;;
 
-    1)  if [ "$choice" == "CPU-المعالج (stable-مستقر)" ]; then
-            # CPU mode
-unset GALLIUM_DRIVER
-pkill xfwm4
-            echo "Starting with CPU rendering..."
-            env DISPLAY=:0 MESA_LOADER_DRIVER_OVERRIDE=swrast GALLIUM_DRIVER=llvmpipe \
-            dbus-launch --exit-with-session xfce4-session & >/dev/null 2>&1
+    1)
+
+        # Extra button or Cancel handling
+        # Determine whether VirGL or CPU was selected.
+
+        if [ "$choice" = "CPU (STABLE)" ]; then
+
+            echo ""
+            echo "Starting CPU rendering..."
+
+            unset GALLIUM_DRIVER
+
+            pkill xfwm4 >/dev/null 2>&1
+
+            export MESA_LOADER_DRIVER_OVERRIDE="swrast"
+            export GALLIUM_DRIVER="llvmpipe"
+
+            dbus-launch --exit-with-session xfce4-session \
+                >/dev/null 2>&1 &
+
+            RENDER_MODE="cpu"
+
         else
-            # VirGL mode
-unset GALLIUM_DRIVER
-pkill xfwm4
-            echo "Starting with VirGL..."
-            MESA_LOADER_DRIVER_OVERRIDE=zink GALLIUM_DRIVER=zink ZINK_DESCRIPTORS=lazy virgl_test_server --use-egl-surfaceless --use-gles & >/dev/null 2>&1
-    
-            env DISPLAY=:0 MESA_LOADER_DRIVER_OVERRIDE=virpipe GALLIUM_DRIVER=virpipe \
-            dbus-launch --exit-with-session xfce4-session & >/dev/null 2>&1
+
+            echo ""
+            echo "Starting VirGL rendering..."
+
+            unset GALLIUM_DRIVER
+
+            pkill xfwm4 >/dev/null 2>&1
+
+            export MESA_LOADER_DRIVER_OVERRIDE="zink"
+            export GALLIUM_DRIVER="zink"
+            export ZINK_DESCRIPTORS="lazy"
+
+            virgl_test_server \
+                --use-egl-surfaceless \
+                --use-gles \
+                >/dev/null 2>&1 &
+
+            sleep 2
+
+            env DISPLAY=:0 \
+                MESA_LOADER_DRIVER_OVERRIDE=virpipe \
+                GALLIUM_DRIVER=virpipe \
+                dbus-launch --exit-with-session xfce4-session \
+                >/dev/null 2>&1 &
+
+            RENDER_MODE="virgl"
+
         fi
+
         ;;
-    *)  # User closed window
-        echo "Session cancelled"
+
+    *)
+
+        echo ""
+        echo "Rendering selection cancelled."
+
         kill -9 $(pgrep -f "termux.x11") >/dev/null 2>&1
-        pkill xfwm4
+        pkill xfwm4 >/dev/null 2>&1
+        pkill xfce4-session >/dev/null 2>&1
+
         exit 1
+
         ;;
+
 esac
 
-# Post-launch
+export REXX_RENDER_MODE="$RENDER_MODE"
 
-xusb
-# Set audio server
-#export PULSE_SERVER=127.0.0.1 > /dev/null 2>&1
+# ============================================================
+# Final environment for Windows runtime
+# ============================================================
+
+echo ""
+echo "[9/10] Preparing Windows runtime..."
+
+# General Wine environment
+export WINEDEBUG="-all"
+
+# Avoid unnecessary Wine synchronization overhead
+export WINEESYNC=1
+export WINEFSYNC=1
+
+# DXVK
+export DXVK_ASYNC=1
+
+# DXVK HUD disabled
+export DXVK_HUD="0"
+
+# VKD3D
+export VKD3D_DEBUG="none"
+
+# Shader cache
+export MESA_SHADER_CACHE_DISABLE="false"
+
+# Windows rendering resolution
+export REXX_WIDTH="${TARGET_RESOLUTION%x*}"
+export REXX_HEIGHT="${TARGET_RESOLUTION#*x}"
+
+# ============================================================
+# CPU affinity recommendation
+# ============================================================
+
+if [ "$CPU_CORES" -ge 8 ]; then
+
+    export REXX_CPU_PROFILE="performance"
+
+elif [ "$CPU_CORES" -ge 6 ]; then
+
+    export REXX_CPU_PROFILE="balanced"
+
+else
+
+    export REXX_CPU_PROFILE="efficiency"
+
+fi
+
+# ============================================================
+# Final status
+# ============================================================
+
+echo ""
+echo "========================================"
+echo "        XoDos Runtime Ready"
+echo "========================================"
+echo "CPU           : $CPU_MODEL"
+echo "Chip          : $CHIPNAME"
+echo "GPU           : $GPU_TYPE"
+echo "Driver        : $DRIVER_TYPE"
+echo "RAM           : ${RAM_MB} MB"
+echo "CPU Cores     : $CPU_CORES"
+echo "Preset        : $PERF_PRESET"
+echo "Resolution    : $TARGET_RESOLUTION"
+echo "Render Mode   : $RENDER_MODE"
+echo "CPU Profile   : $REXX_CPU_PROFILE"
+echo "========================================"
+echo ""
+
+# ============================================================
+# XoDos USB/input setup
+# ============================================================
+
+echo "[10/10] Starting input layer..."
+
+if command -v xusb >/dev/null 2>&1; then
+    xusb >/dev/null 2>&1 &
+fi
+
+# ============================================================
+# Wait for desktop
+# ============================================================
 
 sleep 5
-process_id=$(ps -aux | grep '[x]fce4-screensaver' | awk '{print $2}')
-kill "$process_id" > /dev/null 2>&1
+
+# ============================================================
+# Disable XFCE screensaver
+# ============================================================
+
+process_id=$(ps -aux 2>/dev/null | \
+    grep '[x]fce4-screensaver' | \
+    awk '{print $2}')
+
+if [ -n "$process_id" ]; then
+    kill "$process_id" >/dev/null 2>&1
+fi
+
+# ============================================================
+# Final exported configuration
+# ============================================================
+
+echo ""
+echo "REXX configuration exported:"
+echo "  REXX_RAM_MB=$REXX_RAM_MB"
+echo "  REXX_CORES=$REXX_CORES"
+echo "  REXX_GPU=$REXX_GPU"
+echo "  REXX_DRIVER=$REXX_DRIVER"
+echo "  REXX_PRESET=$REXX_PRESET"
+echo "  REXX_RESOLUTION=$REXX_RESOLUTION"
+echo "  REXX_RENDER_MODE=$REXX_RENDER_MODE"
+echo "  REXX_CPU_PROFILE=$REXX_CPU_PROFILE"
+echo ""
+
+echo "XoDos desktop is ready."
+echo "Windows runtime can now be started."
